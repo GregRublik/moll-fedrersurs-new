@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+
+# Local runtime data (DB, browser profile, logs, discovery dumps)
+var/
+.codegraph
+.idea
+task.md

@@ -1,0 +1,104 @@
+# Bitrix24 field map for smart processes 1078 / 1120.
+#
+# Source: live portal b24test.lot4rent.ru, crm.item.fields with
+# useOriginalUfNames=Y (2026-11-15). Names below are ORIGINAL Bitrix names.
+# BitrixClient converts UF_CRM_138_X -> ufCrm138_X for API calls unless
+# useOriginalUfNames="Y" is passed explicitly.
+#
+# IMPORTANT: crm.type.id != entityTypeId.
+#   1078 -> crm.type.id 138 (hence UF_CRM_138_*)
+#   1120 -> crm.type.id 148 (hence UF_CRM_148_*)
+
+[trade]
+entity_type_id = 1078
+crm_type_id = 138
+category_id = 179
+xml_id_prefix = "fdrs:1078:"
+title_template = "{number} {trade_type}"
+
+[trade.fields]
+number = "UF_CRM_138_1744310779"
+url = "UF_CRM_138_1744310786"
+date = "UF_CRM_138_1744310803"
+text = "UF_CRM_138_1744310814"
+message_type = "UF_CRM_138_1744310823"
+documents = "UF_CRM_138_1758043688"
+
+trade_type = "UF_CRM_138_1763216600"
+trade_date = "UF_CRM_138_1763216613"
+trade_place = "UF_CRM_138_1763216655"
+application_period = "UF_CRM_138_1763216670"
+application_terms = "UF_CRM_138_1763216680"
+additional = "UF_CRM_138_1763216693"
+
+trade_type_alt = "UF_CRM_138_1774282104"
+trade_start = "UF_CRM_138_1774282119"
+trade_date_note = "UF_CRM_138_1774282132"
+platform_raw = "UF_CRM_138_1774282142"
+rules = "UF_CRM_138_1774282150"
+trade_number = "UF_CRM_138_1774282169"
+card_url = "UF_CRM_138_1774282181"
+message_url = "UF_CRM_138_1774282189"
+etp_url = "UF_CRM_138_1774282198"
+etp_name = "UF_CRM_138_1774282206"
+region = "UF_CRM_138_1774282218"
+debtor_name = "UF_CRM_138_1774282227"
+debtor_address = "UF_CRM_138_1774282235"
+debtor_ogrn = "UF_CRM_138_1774282243"
+debtor_inn = "UF_CRM_138_1774282250"
+case_number = "UF_CRM_138_1774282257"
+organizer = "UF_CRM_138_1774282265"
+manager = "UF_CRM_138_1774282273"
+trade_end = "UF_CRM_138_1774282281"
+application_start = "UF_CRM_138_1774282289"
+application_end = "UF_CRM_138_1774282295"
+manager_name = "UF_CRM_138_1774282309"
+manager_inn = "UF_CRM_138_1774282316"
+manager_snils = "UF_CRM_138_1774282320"
+manager_address = "UF_CRM_138_1774282332"
+manager_email = "UF_CRM_138_1774282335"
+sro_name = "UF_CRM_138_1774282346"
+sro_inn = "UF_CRM_138_1774282349"
+sro_ogrn = "UF_CRM_138_1774282361"
+sro_address = "UF_CRM_138_1774282369"
+additional_info = "UF_CRM_138_1774282377"
+
+[lot]
+entity_type_id = 1120
+crm_type_id = 148
+category_id = 180
+xml_id_prefix = "fdrs:1120:"
+title_template = "{lot_number} {classification}"
+# Link to the parent trade. Field exists on 1120 (type crm_entity).
+parent_field = "parentId1078"
+
+[lot.fields]
+description = "UF_CRM_148_1758037968"
+classification = "UF_CRM_148_1758037977"
+start_price = "UF_CRM_148_1758037984"
+step = "UF_CRM_148_1758037994"
+price_reduction = "UF_CRM_148_1758038004"
+deposit = "UF_CRM_148_1758038013"
+
+lot_number = "UF_CRM_148_1774282420"
+trade_number = "UF_CRM_148_1774282437"
+classifier_code = "UF_CRM_148_1774282445"
+current_price = "UF_CRM_148_1774282455"
+min_price = "UF_CRM_148_1774282462"
+trade_status = "UF_CRM_148_1774282471"
+bids_count = "UF_CRM_148_1774282479"
+winner = "UF_CRM_148_1774282484"
+buyer = "UF_CRM_148_1774282496"
+sale_contract = "UF_CRM_148_1774282504"
+sale_price = "UF_CRM_148_1774282511"
+attachments = "UF_CRM_148_1774282541"
+trade_url = "UF_CRM_148_1777521406"
+debtor = "UF_CRM_148_1777521536790"
+trade_start_date = "UF_CRM_148_1777522607918"
+
+[common]
+# opened is the only required field in both smart processes.
+required_fields = { opened = "Y" }
+xml_id_field = "xmlId"
+category_field = "categoryId"
+stage_field = "stageId"

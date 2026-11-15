@@ -1,0 +1,40 @@
+# Selection rules for "права требования / дебиторская задолженность".
+# The file is hashed into filter_version; changing it requires `refilter`.
+
+[scope]
+trade_types = ["PublicOffer"]
+include_all_public_offers = true
+regions = []
+expand_by_bankrupt = false
+bankrupt_expansion_limit = 20
+
+[classifiers]
+include_names = [
+    "права требования",
+    "дебиторская задолженность",
+    "имущественные права",
+    "уступка права требования",
+    "цессия",
+]
+exclude_names = ["кредиторская задолженность"]
+match_mode = "contains_normalized"
+
+[text]
+include_patterns = [
+    'прав[ао]?\s+требовани',
+    'дебиторск\w*\s+задолженност',
+    'уступк\w*\s+прав',
+    'цесси',
+]
+negative_patterns = ['кредиторск\w*\s+задолженност']
+scan_fields = ["trade_object", "sale_agreement", "payment_info", "trade_message", "event_text"]
+min_matches = 1
+
+[heuristics]
+text_overrides_classifier = true
+classifier_overrides_text = true
+public_offer_requires_keyword = false
+
+[showcase]
+use_account_receivables = true
+force_include_matches = true
