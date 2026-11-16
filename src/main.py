@@ -24,6 +24,7 @@ from fedresurs.bitrix.sync import BitrixSyncService  # noqa: E402
 from fedresurs.browser.factory import config_from_settings, make_launcher  # noqa: E402
 from fedresurs.browser.session import PortalSession  # noqa: E402
 from fedresurs.browser.transport import PageTransport  # noqa: E402
+from fedresurs.filtering.refilter import refilter_lots  # noqa: E402
 from fedresurs.filtering.rules import FilterConfig  # noqa: E402
 from fedresurs.logging import setup_logging  # noqa: E402
 from fedresurs.pipeline.collect import (  # noqa: E402
@@ -317,6 +318,7 @@ async def cmd_collect(args: argparse.Namespace) -> int:
                 date_from=args.date_from,
                 date_to=args.date_to,
                 trade_type=args.trade_type,
+                search_string=args.search_string,
                 max_pages=args.max_pages,
                 page_size=args.page_size,
                 run_id=run_id,
@@ -329,6 +331,7 @@ async def cmd_collect(args: argparse.Namespace) -> int:
                 type_codes=type_codes,
                 lookback_hours=args.lookback_hours,
                 trade_type=args.trade_type,
+                search_string=args.search_string,
                 max_pages=args.max_pages,
                 page_size=args.page_size,
                 run_id=run_id,
@@ -395,16 +398,32 @@ async def cmd_sync(args: argparse.Namespace) -> int:
                 dry_run=not args.write or settings.bitrix.dry_run,
                 write_enabled=settings.bitrix.write_enabled,
             )
+            only_candidates = settings.app.sync_only_candidates and not args.include_non_candidates
             stats = await service.sync_pending(
                 args.limit,
                 trade_guid=args.guid,
                 force=args.force,
+                only_candidates=only_candidates,
             )
+            stats["only_candidates"] = only_candidates
             stats["requests"] = client.request_count
             stats["dry_run_mode"] = service.dry_run
             stats["write_enabled"] = settings.bitrix.write_enabled
         print(json.dumps(stats, ensure_ascii=False, indent=2))
         return 0 if stats["errors"] == 0 else 1
+    finally:
+        await db.close()
+
+
+async def cmd_refilter(args: argparse.Namespace) -> int:
+    """Recompute lot decisions from already collected data (no network)."""
+    db = await open_database()
+    try:
+        config = FilterConfig.load(settings.app.filter_config_path)
+        stats = await refilter_lots(db, config, dry_run=args.dry_run)
+        stats["filter_version"] = config.version
+        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        return 0
     finally:
         await db.close()
 
@@ -436,6 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="recent mode: stop once records older than this are reached (default: 24)",
     )
     collect.add_argument("--trade-type", default=None, help="portal tradeType code, e.g. PublicOffer")
+    collect.add_argument("--search-string", default=None, help="portal searchString filter")
     collect.add_argument("--max-pages", type=int, default=None)
     collect.add_argument("--page-size", type=int, default=15, help="portal page size (15 is SPA-safe)")
     collect.add_argument(
@@ -454,12 +474,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="include already synced rows (for an explicit re-sync)",
     )
     sync.add_argument(
+        "--include-non-candidates",
+        action="store_true",
+        help="also sync rows excluded/reviewed by the filter (debug only)",
+    )
+    sync.add_argument(
         "--write",
         action="store_true",
         help="actually write; still requires BITRIX_WRITE_ENABLED=true",
     )
 
-    for name in ("refresh", "verify", "report", "refilter"):
+    refilter = sub.add_parser("refilter", help="recompute lot decisions from stored data")
+    refilter.add_argument("--dry-run", action="store_true")
+
+    for name in ("refresh", "verify", "report"):
         sub.add_parser(name, help=f"{name} (not implemented yet)")
 
     return parser
@@ -476,6 +504,8 @@ async def async_main(args: argparse.Namespace) -> int:
         return await cmd_collect(args)
     if args.command == "sync":
         return await cmd_sync(args)
+    if args.command == "refilter":
+        return await cmd_refilter(args)
     return _not_implemented(args.command)
 
 

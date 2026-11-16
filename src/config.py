@@ -60,6 +60,7 @@ class AppSettings(BaseSettings):
     field_map_path: Path = ROOT / "config" / "bitrix_fieldmap.toml"
     sync_mode: Literal["upsert", "fill_empty", "create_only"] = "upsert"
     sync_stage: bool = False
+    sync_only_candidates: bool = True
     schedule_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore", populate_by_name=True)

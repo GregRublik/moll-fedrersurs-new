@@ -40,6 +40,7 @@ class FilterConfig:
     min_matches: int
     text_overrides_classifier: bool
     public_offer_requires_keyword: bool
+    unmatched_decision: str
     version: str
 
     @classmethod
@@ -52,6 +53,10 @@ class FilterConfig:
         classifiers = data.get("classifiers", {})
         text = data.get("text", {})
         heuristics = data.get("heuristics", {})
+
+        unmatched = str(heuristics.get("unmatched_decision", "exclude")).lower()
+        if unmatched not in ("exclude", "review"):
+            unmatched = "exclude"
 
         return cls(
             trade_types=[str(value) for value in scope.get("trade_types", [])],
@@ -74,6 +79,7 @@ class FilterConfig:
             min_matches=int(text.get("min_matches", 1)),
             text_overrides_classifier=bool(heuristics.get("text_overrides_classifier", True)),
             public_offer_requires_keyword=bool(heuristics.get("public_offer_requires_keyword", False)),
+            unmatched_decision=unmatched,
             version=hashlib.sha256(raw).hexdigest()[:16],
         )
 
@@ -101,10 +107,10 @@ def _classifier_hits(classifiers: list[str], config: FilterConfig) -> tuple[list
     return include_hits, exclude_hits
 
 
-def _text_hits(texts: list[str], config: FilterConfig) -> tuple[int, int]:
+def _text_hits(texts: list[str], config: FilterConfig) -> tuple[list[str], list[str]]:
     joined = "\n".join(value for value in texts if value)
-    include = sum(1 for pattern in config.text_include if pattern.search(joined))
-    negative = sum(1 for pattern in config.text_negative if pattern.search(joined))
+    include = [pattern.pattern for pattern in config.text_include if pattern.search(joined)]
+    negative = [pattern.pattern for pattern in config.text_negative if pattern.search(joined)]
     return include, negative
 
 
@@ -121,7 +127,9 @@ def decide_lot(
         return Decision(
             FilterDecision.EXCLUDE,
             0.0,
-            ["negative_text"] + [f"classifier_exclude:{value}" for value in classifier_exclude],
+            ["negative_text"]
+            + [f"negative:{value}" for value in text_negative]
+            + [f"classifier_exclude:{value}" for value in classifier_exclude],
             ClassificationSource.TEXT,
         )
 
@@ -133,11 +141,11 @@ def decide_lot(
             ClassificationSource.CLASSIFIER,
         )
 
-    if text_include >= config.min_matches and config.text_overrides_classifier:
+    if len(text_include) >= config.min_matches and config.text_overrides_classifier:
         return Decision(
             FilterDecision.INCLUDE,
             0.7,
-            [f"text_matches:{text_include}"],
+            [f"text:{value}" for value in text_include],
             ClassificationSource.TEXT,
         )
 
@@ -149,7 +157,15 @@ def decide_lot(
             ClassificationSource.CLASSIFIER,
         )
 
-    return Decision(FilterDecision.REVIEW, 0.3, ["no_signals"], ClassificationSource.REVIEW)
+    if config.unmatched_decision == "review":
+        return Decision(FilterDecision.REVIEW, 0.3, ["no_signals"], ClassificationSource.REVIEW)
+
+    return Decision(
+        FilterDecision.EXCLUDE,
+        0.0,
+        ["no_signals"],
+        ClassificationSource.UNMATCHED,
+    )
 
 
 def lot_texts(normalized_lot: dict[str, Any]) -> list[str]:

@@ -55,7 +55,24 @@ def _price_reduction_text(raw: str | None) -> str | None:
         payload = json.loads(raw)
     except json.JSONDecodeError:
         return raw
-    text = payload.get("text") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict):
+        return str(payload)
+
+    intervals = payload.get("intervals") or []
+    if intervals:
+        parts = []
+        for interval in intervals:
+            start = date_only(interval.get("start_at"))
+            end = date_only(interval.get("end_at"))
+            price = interval.get("price")
+            if start or end:
+                parts.append(f"{start or '—'}–{end or '—'}: {price}")
+            elif price:
+                parts.append(str(price))
+        if parts:
+            return "; ".join(parts)
+
+    text = payload.get("text")
     return str(text) if text else None
 
 
@@ -198,6 +215,7 @@ class BitrixSyncService:
         *,
         trade_guid: str | None = None,
         force: bool = False,
+        only_candidates: bool = True,
     ) -> dict[str, int]:
         stats = {
             "trades_scanned": 0,
@@ -205,18 +223,28 @@ class BitrixSyncService:
             "lots_scanned": 0,
             "lots_synced": 0,
             "waiting_for_trade": 0,
+            "skipped_non_candidates": 0,
+            "matched_by_number": 0,
             "dry_run": 0,
             "errors": 0,
         }
 
+        if only_candidates:
+            stats["skipped_non_candidates"] += await self.bidding_repo.count_non_candidates(
+                guid=trade_guid, include_synced=force
+            )
+            stats["skipped_non_candidates"] += await self.lot_repo.count_non_candidates(
+                trade_guid=trade_guid, include_synced=force
+            )
+
         for row in await self.bidding_repo.list_for_sync(
-            limit, guid=trade_guid, include_synced=force
+            limit, guid=trade_guid, include_synced=force, only_candidates=only_candidates
         ):
             stats["trades_scanned"] += 1
             await self._sync_bidding(row, stats)
 
         for row in await self.lot_repo.list_for_sync(
-            limit, trade_guid=trade_guid, include_synced=force
+            limit, trade_guid=trade_guid, include_synced=force, only_candidates=only_candidates
         ):
             stats["lots_scanned"] += 1
             await self._sync_lot(row, stats)
@@ -240,7 +268,27 @@ class BitrixSyncService:
         )
 
         try:
-            existing = await self._find_item(entity.entity_type_id, xml_id)
+            existing = await self._find_item(
+                entity.entity_type_id, xml_id, category_id=entity.category_id
+            )
+            if existing is None:
+                number_field = entity.api_fields().get("trade_number")
+                if number_field and row["number"]:
+                    existing = await self._find_item_by_field(
+                        entity.entity_type_id,
+                        number_field,
+                        row["number"],
+                        category_id=entity.category_id,
+                    )
+                    if existing is not None:
+                        stats["matched_by_number"] += 1
+                        logger.info(
+                            "bitrix matched trade %s by %s=%s -> id %s",
+                            guid,
+                            number_field,
+                            row["number"],
+                            existing,
+                        )
         except BitrixApiError as exc:
             await self._fail_bidding(guid, exc, stats)
             return
@@ -312,7 +360,9 @@ class BitrixSyncService:
         )
 
         try:
-            existing = await self._find_item(entity.entity_type_id, xml_id)
+            existing = await self._find_item(
+                entity.entity_type_id, xml_id, category_id=entity.category_id
+            )
         except BitrixApiError as exc:
             await self._fail_lot(lot_key, exc, stats)
             return
@@ -349,18 +399,48 @@ class BitrixSyncService:
         await self.lot_repo.set_synced(lot_key, bitrix_id, row["content_hash"])
         stats["lots_synced"] += 1
 
-    async def _find_item(self, entity_type_id: int, xml_id: str) -> int | None:
+    async def _find_item(
+        self, entity_type_id: int, xml_id: str, *, category_id: int
+    ) -> int | None:
         response = await self.client.call(
             "crm.item.list",
             {
                 "entityTypeId": entity_type_id,
-                "filter": {"xmlId": xml_id},
-                "select": ["id", "xmlId"],
+                "filter": {"xmlId": xml_id, "categoryId": category_id},
+                "select": ["id", "xmlId", "categoryId"],
             },
         )
         items = response.get("result", {}).get("items", [])
         if not items:
             return None
+        return int(items[0]["id"])
+
+    async def _find_item_by_field(
+        self,
+        entity_type_id: int,
+        field: str,
+        value: object,
+        *,
+        category_id: int,
+    ) -> int | None:
+        """Find legacy cards created by another integration (empty xmlId).
+
+        Prefer a card without xmlId, then the oldest one; duplicates already
+        exist in the portal, and we must not create one more.
+        """
+        response = await self.client.call(
+            "crm.item.list",
+            {
+                "entityTypeId": entity_type_id,
+                "filter": {field: str(value), "categoryId": category_id},
+                "select": ["id", "xmlId", "categoryId", "title"],
+                "order": {"id": "ASC"},
+            },
+        )
+        items = response.get("result", {}).get("items", [])
+        if not items:
+            return None
+        items.sort(key=lambda item: (bool(item.get("xmlId")), int(item.get("id", 0))))
         return int(items[0]["id"])
 
     async def _fail_bidding(self, guid: str, exc: Exception, stats: dict[str, int]) -> None:

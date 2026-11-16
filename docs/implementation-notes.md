@@ -60,6 +60,38 @@ Implementation (2026-11-15):
   yet; the announcement already contains the main text, rules and documents.
   Documents are stored as metadata + download URLs, not uploaded into Bitrix.
 
+### Price reduction schedule
+
+`normalization/price_schedule.py` parses `lot.priceReduction` into intervals:
+
+- HTML tables with 4 or 8 columns (the 8-column form has a header row);
+- `<br/>`-separated `dd.mm.yyyy hh:mm: price` lines;
+- free text explaining the rule (stored as `format=text`).
+
+The result is stored in `lots.price_reduction_json`:
+`{format, intervals[], current_price, min_price, text}`. `current_price` and
+`min_price` are computed at fetch time when the API does not provide them.
+The unlabelled 4th column of the compact table is stored as `extra`, not
+guessed as a deposit.
+
+Bitrix gets the human-readable interval summary in «Снижение цены», plus
+«Текущая цена» and «Минимальная цена». Summary and text are truncated to 500
+characters by the string fields.
+
+### Sync candidate gating
+
+`sync` writes only rows with `is_candidate = 1`. Trades and lots in `review`
+or excluded by the filter stay in SQLite and are not created in Bitrix.
+`SYNC_ONLY_CANDIDATES=false` or `sync --include-non-candidates` disables the
+gate for debugging; the stats field `skipped_non_candidates` shows how many
+rows were held back.
+
+Selection defaults are in `config/filters.toml`: `unmatched_decision=exclude`
+(no signals -> exclude, not review), anchored text patterns, and matched
+patterns recorded in `match_reasons_json`. `refilter [--dry-run]` recomputes
+lot decisions from stored data without touching the network and moves newly
+selected/skipped lots in the sync queue.
+
 ### Qrator findings
 
 - Plain HTTP and headless Chromium are blocked (401/403). **Headful Chromium
@@ -164,6 +196,29 @@ same (138/148), categories 179/180 exist, and both fields were created
 on production has 26 fields instead of 21: five extra fields (manager name and
 email, debtor INN, debtor type as enumeration, bankruptcy case number) are not
 mapped yet.
+
+### Existing trade cards and deduplication (2026-11-16)
+
+The production smart process already contains 9 959 trade cards in category
+179, created by another integration ("Торги (ЕФРСБ, old.bankrot)"). All of
+them have an empty `xmlId`, but a filled trade number
+(`UF_CRM_138_1774282169`) and card URL.
+
+39 of the 108 trades collected by the new collector already exist there
+(matched both by trade number and by the GUID in the card URL).
+
+`sync` now resolves a trade in this order:
+
+1. `xmlId` in category 179;
+2. if not found, `ufCrm138_1774282169` = trade number in category 179;
+3. if found by number, update that card and set its `xmlId`, so subsequent
+   runs use the fast path.
+
+Verified with a read-only dry-run on production: trade `392933` resolved to
+existing card id `11393`, no duplicate created.
+
+Lots (1120) still use `xmlId` only. Before bulk sync, check the legacy lot
+cards in 1120 for the same problem (empty `xmlId`, filled lot/trade numbers).
 
 ### UF naming notes
 

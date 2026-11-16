@@ -248,6 +248,7 @@ class DetailsService:
             data["match_score"] = decision.score
             data["match_reasons_json"] = canonical_json(decision.reasons)
             data["classification_source"] = str(decision.source)
+            data["filter_version"] = self.filter_config.version
             await self.lot_repo.upsert(data)
             count += 1
         return count

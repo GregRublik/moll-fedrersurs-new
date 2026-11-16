@@ -75,6 +75,7 @@ class ClassificationSource(StrEnum):
     SHOWCASE = "showcase"
     OVERRIDE = "override"
     REVIEW = "review"
+    UNMATCHED = "unmatched"
 
 
 class ErrorType(StrEnum):

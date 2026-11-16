@@ -4,8 +4,15 @@ import json
 from pathlib import Path
 
 from fedresurs.bitrix.fields import FieldMap, to_api_name, xml_id_for
-from fedresurs.bitrix.sync import build_lot_fields, build_payload, build_trade_fields
+from fedresurs.bitrix.sync import (
+    BitrixSyncService,
+    _price_reduction_text,
+    build_lot_fields,
+    build_payload,
+    build_trade_fields,
+)
 from fedresurs.portal.details import merge_card
+from fedresurs.storage.repositories import BiddingRepo, BitrixMapRepo, ErrorRepo, LotRepo
 
 ROOT = Path(__file__).resolve().parents[1]
 FIELD_MAP = ROOT / "config" / "bitrix_fieldmap.toml"
@@ -134,6 +141,105 @@ def test_merge_card_maps_status_and_price_form():
     assert merged["status"] == "Объявлены торги"
     assert merged["price_form"] == "Закрытая"
     assert merged["court"] == "Арбитражный суд"
+
+
+def test_price_reduction_summary_from_intervals():
+    raw = json.dumps(
+        {
+            "format": "html_table",
+            "intervals": [
+                {
+                    "start_at": "2026-11-16T00:00:00+03:00",
+                    "end_at": "2026-11-20T15:00:00+03:00",
+                    "price": "482012.85",
+                }
+            ],
+            "text": None,
+        }
+    )
+    assert _price_reduction_text(raw) == "2026-11-16–2026-11-20: 482012.85"
+
+
+class FakeBitrixClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call(self, method: str, params: dict) -> dict:
+        self.calls.append((method, params))
+        if method == "crm.item.list":
+            if "xmlId" in params["filter"]:
+                return {"result": {"items": []}}
+            return {
+                "result": {
+                    "items": [
+                        {"id": 11393, "xmlId": "", "categoryId": 179, "title": "392933 Торги"}
+                    ]
+                }
+            }
+        if method == "crm.item.update":
+            return {"result": {"item": {"id": 11393}}}
+        raise AssertionError(f"unexpected method {method}")
+
+
+async def test_sync_matches_existing_trade_by_number_and_sets_xml_id(db, tmp_path):
+    field_map = make_field_map(tmp_path)
+    await BiddingRepo(db).upsert(
+        {
+            "guid": "trade-1",
+            "number": "392933",
+            "trade_type_code": "PublicOffer",
+            "trade_type_name": "Публичное предложение",
+            "status": "Объявлены торги",
+            "is_candidate": 1,
+            "source_state": "active",
+            "content_hash": "hash-1",
+            "normalized_json": json.dumps({"guid": "trade-1", "number": "392933"}),
+        }
+    )
+    row = await db.fetchone("SELECT * FROM biddings WHERE guid = 'trade-1'")
+
+    client = FakeBitrixClient()
+    service = BitrixSyncService(
+        client=client,
+        field_map=field_map,
+        bidding_repo=BiddingRepo(db),
+        lot_repo=LotRepo(db),
+        map_repo=BitrixMapRepo(db),
+        error_repo=ErrorRepo(db),
+        dry_run=False,
+        write_enabled=True,
+    )
+    stats = {
+        "trades_scanned": 1,
+        "trades_synced": 0,
+        "lots_scanned": 0,
+        "lots_synced": 0,
+        "waiting_for_trade": 0,
+        "skipped_non_candidates": 0,
+        "matched_by_number": 0,
+        "dry_run": 0,
+        "errors": 0,
+    }
+    await service._sync_bidding(row, stats)
+
+    assert stats["matched_by_number"] == 1
+    assert stats["trades_synced"] == 1
+
+    methods = [method for method, _ in client.calls]
+    assert methods == ["crm.item.list", "crm.item.list", "crm.item.update"]
+    number_filter = client.calls[1][1]["filter"]
+    assert number_filter["ufCrm138_1774282169"] == "392933"
+    assert number_filter["categoryId"] == 179
+
+    update_params = client.calls[2][1]
+    assert update_params["id"] == 11393
+    assert update_params["fields"]["xmlId"] == "fdrs:1078:trade-1"
+
+    updated = await BiddingRepo(db).get("trade-1")
+    assert updated["bitrix_id"] == 11393
+    assert updated["sync_status"] == "synced"
+    mapping = await BitrixMapRepo(db).get("bidding", "trade-1")
+    assert mapping["bitrix_id"] == 11393
 
 
 def test_build_payload_adds_identity_and_category(tmp_path):

@@ -21,12 +21,16 @@ match_mode = "contains_normalized"
 
 [text]
 include_patterns = [
-    'прав[ао]?\s+требовани',
     'дебиторск\w*\s+задолженност',
+    'прав[ао]\s+требовани[ея]?\s+к\s+',
     'уступк\w*\s+прав',
     'цесси',
+    'долговы[ех]\s+обязательств',
 ]
-negative_patterns = ['кредиторск\w*\s+задолженност']
+negative_patterns = [
+    'кредиторск\w*\s+задолженност',
+    'право\s+требования\s+на\s+получение\s+результатов\s+работ',
+]
 scan_fields = ["trade_object", "sale_agreement", "payment_info", "trade_message", "event_text"]
 min_matches = 1
 
@@ -34,6 +38,8 @@ min_matches = 1
 text_overrides_classifier = true
 classifier_overrides_text = true
 public_offer_requires_keyword = false
+# exclude — всё, что не совпало; review — оставлять несовпавшее на ручной разбор
+unmatched_decision = "exclude"
 
 [showcase]
 use_account_receivables = true

@@ -40,12 +40,13 @@ async def run_collect(
     date_from: str,
     date_to: str,
     trade_type: str | None = None,
+    search_string: str | None = None,
     max_pages: int | None = None,
     page_size: int = 15,
     run_id: int | None = None,
 ) -> WindowResult:
     window_repo = WindowRepo(db)
-    filter_hash = f"{filter_config.version}:{trade_type or 'all'}"
+    filter_hash = f"{filter_config.version}:{trade_type or 'all'}:{search_string or ''}"
     window_id = await window_repo.get_or_create(
         kind="feed",
         date_from=date_from,
@@ -53,6 +54,7 @@ async def run_collect(
         filter_hash=filter_hash,
         run_id=run_id,
         trade_type=trade_type,
+        search_string=search_string,
     )
     discovery = DiscoveryService(
         client=client,
@@ -71,6 +73,7 @@ async def run_collect(
         date_from=date_from,
         date_to=date_to,
         trade_type=trade_type,
+        search_string=search_string,
         max_pages=max_pages,
     )
 
@@ -83,6 +86,7 @@ async def run_collect_recent(
     type_codes: dict[str, str],
     lookback_hours: int = 24,
     trade_type: str | None = None,
+    search_string: str | None = None,
     max_pages: int | None = None,
     page_size: int = 15,
     run_id: int | None = None,
@@ -91,7 +95,9 @@ async def run_collect_recent(
     now = now_msk()
     date_from = (now - timedelta(hours=lookback_hours)).isoformat(timespec="seconds")
     date_to = now.isoformat(timespec="seconds")
-    filter_hash = f"{filter_config.version}:recent:{trade_type or 'all'}:{lookback_hours}"
+    filter_hash = (
+        f"{filter_config.version}:recent:{trade_type or 'all'}:{lookback_hours}:{search_string or ''}"
+    )
 
     window_repo = WindowRepo(db)
     window_id = await window_repo.get_or_create(
@@ -101,6 +107,7 @@ async def run_collect_recent(
         filter_hash=filter_hash,
         run_id=run_id,
         trade_type=trade_type,
+        search_string=search_string,
     )
     discovery = DiscoveryService(
         client=client,
@@ -119,6 +126,7 @@ async def run_collect_recent(
         date_from=date_from,
         date_to=date_to,
         trade_type=trade_type,
+        search_string=search_string,
         max_pages=max_pages,
     )
 

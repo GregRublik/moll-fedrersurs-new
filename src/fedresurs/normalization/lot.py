@@ -4,6 +4,7 @@ from typing import Any
 
 from fedresurs.normalization.hashing import canonical_json, content_hash
 from fedresurs.normalization.html_text import money, number_text, strip_html
+from fedresurs.normalization.price_schedule import parse_price_schedule
 
 
 def lot_key(trade_guid: str, lot_number: str) -> str:
@@ -24,6 +25,11 @@ def normalize_lot(
     status = item.get("status") or {}
     classifiers = [str(value) for value in (item.get("classifiers") or []) if value]
     trade_object_html = item.get("tradeObject")
+    schedule = parse_price_schedule(item.get("priceReduction"))
+    schedule_deposit = next(
+        (interval.get("deposit") for interval in schedule.get("intervals", []) if interval.get("deposit")),
+        None,
+    )
 
     normalized: dict[str, Any] = {
         "trade_guid": trade_guid,
@@ -33,13 +39,11 @@ def normalize_lot(
         "status_code": status.get("code"),
         "status_name": status.get("name"),
         "start_price": money(item.get("startPrice")),
-        "current_price": money(item.get("currentPrice")),
-        "min_price": money(item.get("minPrice")),
-        "deposit": money(item.get("deposit")),
+        "current_price": money(item.get("currentPrice")) or schedule.get("current_price"),
+        "min_price": money(item.get("minPrice")) or schedule.get("min_price"),
+        "deposit": money(item.get("deposit")) or schedule_deposit,
         "advance_percent": money(item.get("advancePercent")),
-        "price_reduction_json": canonical_json(
-            {"text": item.get("priceReduction"), "prices": item.get("prices")}
-        ),
+        "price_reduction_json": canonical_json(schedule),
         "classifiers_json": canonical_json(classifiers),
         "trade_object_html": trade_object_html,
         "trade_object_text": strip_html(trade_object_html),

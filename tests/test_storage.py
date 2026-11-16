@@ -162,6 +162,32 @@ async def test_sync_job_dedup_and_dependency(db):
     assert [row["id"] for row in ready] == [lot_job]
 
 
+async def test_sync_only_candidates_by_default(db):
+    biddings = BiddingRepo(db)
+    await biddings.upsert(bidding_data(guid="c1", is_candidate=1))
+    await biddings.upsert(bidding_data(guid="n1", is_candidate=0))
+    await biddings.upsert(bidding_data(guid="c2", is_candidate=1))
+
+    lots = LotRepo(db)
+    await lots.upsert(lot_data(trade_guid="c1", lot_key="c1:1", is_candidate=1))
+    await lots.upsert(lot_data(trade_guid="c1", lot_number="2", lot_key="c1:2", is_candidate=0))
+
+    selected = await biddings.list_for_sync(10, only_candidates=True)
+    assert {row["guid"] for row in selected} == {"c1", "c2"}
+
+    all_rows = await biddings.list_for_sync(10, only_candidates=False)
+    assert {row["guid"] for row in all_rows} == {"c1", "n1", "c2"}
+
+    selected_lots = await lots.list_for_sync(10, trade_guid="c1", only_candidates=True)
+    assert {row["lot_key"] for row in selected_lots} == {"c1:1"}
+
+    all_lots = await lots.list_for_sync(10, trade_guid="c1", only_candidates=False)
+    assert {row["lot_key"] for row in all_lots} == {"c1:1", "c1:2"}
+
+    assert await biddings.count_non_candidates() == 1
+    assert await lots.count_non_candidates(trade_guid="c1") == 1
+
+
 async def test_bitrix_id_map_and_lock(db):
     mapping = BitrixMapRepo(db)
     await mapping.set(

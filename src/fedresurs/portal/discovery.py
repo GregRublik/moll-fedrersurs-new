@@ -157,6 +157,7 @@ class DiscoveryService:
         date_from: str,
         date_to: str,
         trade_type: str | None = None,
+        search_string: str | None = None,
         max_pages: int | None = None,
         known_pages_to_stop: int = 2,
     ) -> WindowResult:
@@ -182,7 +183,12 @@ class DiscoveryService:
 
         try:
             while max_pages is None or pages < max_pages:
-                path = endpoints.biddings(limit=self.page_size, offset=offset, trade_type=trade_type)
+                path = endpoints.biddings(
+                    limit=self.page_size,
+                    offset=offset,
+                    trade_type=trade_type,
+                    search_string=search_string,
+                )
                 payload = await self.client.get(
                     path, window_id=window_id, entity_type="window", entity_key=str(window_id)
                 )

@@ -118,6 +118,7 @@ LOT_COLUMNS = [
     "match_score",
     "match_reasons_json",
     "classification_source",
+    "filter_version",
     "content_hash",
     "normalized_json",
 ]
@@ -251,11 +252,14 @@ class BiddingRepo(_BaseRepo):
         *,
         guid: str | None = None,
         include_synced: bool = False,
+        only_candidates: bool = False,
     ) -> list[aiosqlite.Row]:
         clauses: list[str] = []
         params: list[Any] = []
         if not include_synced:
             clauses.append("sync_status = 'pending'")
+        if only_candidates:
+            clauses.append("is_candidate = 1")
         if guid is not None:
             clauses.append("guid = ?")
             params.append(guid)
@@ -265,6 +269,24 @@ class BiddingRepo(_BaseRepo):
             f"SELECT * FROM biddings {where} ORDER BY last_seen_at LIMIT ?",
             params,
         )
+
+    async def count_non_candidates(
+        self,
+        *,
+        guid: str | None = None,
+        include_synced: bool = False,
+    ) -> int:
+        clauses = ["is_candidate = 0"]
+        params: list[Any] = []
+        if not include_synced:
+            clauses.append("sync_status = 'pending'")
+        if guid is not None:
+            clauses.append("guid = ?")
+            params.append(guid)
+        row = await self.db.fetchone(
+            f"SELECT COUNT(*) AS cnt FROM biddings WHERE {' AND '.join(clauses)}", params
+        )
+        return int(row["cnt"]) if row else 0
 
     async def set_synced(self, guid: str, bitrix_id: int, synced_hash: str) -> None:
         await self.db.execute(
@@ -326,6 +348,40 @@ class LotRepo(_BaseRepo):
             )
             return UpsertResult(lot_key, False, True, changed)
 
+    async def update_filter_decision(
+        self,
+        lot_key: str,
+        *,
+        is_candidate: int,
+        match_score: float,
+        match_reasons_json: str,
+        classification_source: str,
+        filter_version: str,
+    ) -> None:
+        await self.db.execute(
+            """
+            UPDATE lots
+            SET is_candidate = ?, match_score = ?, match_reasons_json = ?,
+                classification_source = ?, filter_version = ?,
+                sync_status = CASE
+                    WHEN ? = 1 AND sync_status IN ('pending', 'skipped') THEN 'pending'
+                    WHEN ? = 0 AND sync_status = 'pending' THEN 'skipped'
+                    ELSE sync_status
+                END
+            WHERE lot_key = ?
+            """,
+            (
+                is_candidate,
+                match_score,
+                match_reasons_json,
+                classification_source,
+                filter_version,
+                is_candidate,
+                is_candidate,
+                lot_key,
+            ),
+        )
+
     async def mark_missing(self, lot_key: str) -> None:
         await self.db.execute(
             "UPDATE lots SET is_deleted_at_source = 1, missing_since = ? WHERE lot_key = ?",
@@ -338,11 +394,14 @@ class LotRepo(_BaseRepo):
         *,
         trade_guid: str | None = None,
         include_synced: bool = False,
+        only_candidates: bool = False,
     ) -> list[aiosqlite.Row]:
         clauses: list[str] = []
         params: list[Any] = []
         if not include_synced:
             clauses.append("sync_status = 'pending'")
+        if only_candidates:
+            clauses.append("is_candidate = 1")
         if trade_guid is not None:
             clauses.append("trade_guid = ?")
             params.append(trade_guid)
@@ -352,6 +411,24 @@ class LotRepo(_BaseRepo):
             f"SELECT * FROM lots {where} ORDER BY first_seen_at LIMIT ?",
             params,
         )
+
+    async def count_non_candidates(
+        self,
+        *,
+        trade_guid: str | None = None,
+        include_synced: bool = False,
+    ) -> int:
+        clauses = ["is_candidate = 0"]
+        params: list[Any] = []
+        if not include_synced:
+            clauses.append("sync_status = 'pending'")
+        if trade_guid is not None:
+            clauses.append("trade_guid = ?")
+            params.append(trade_guid)
+        row = await self.db.fetchone(
+            f"SELECT COUNT(*) AS cnt FROM lots WHERE {' AND '.join(clauses)}", params
+        )
+        return int(row["cnt"]) if row else 0
 
     async def set_synced(self, lot_key: str, bitrix_id: int, synced_hash: str) -> None:
         await self.db.execute(

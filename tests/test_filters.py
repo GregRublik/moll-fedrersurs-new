@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from fedresurs.constants import FilterDecision
@@ -47,6 +48,34 @@ def test_lot_negative_text_excludes_without_positive_classifier():
     assert decision.decision == FilterDecision.EXCLUDE
 
 
-def test_unclassified_lot_goes_to_review():
+def test_unclassified_lot_is_excluded_by_default():
     decision = decide_lot(classifiers=["Оборудование"], texts=["Станок токарный"], config=config())
+    assert decision.decision == FilterDecision.EXCLUDE
+    assert decision.source == "unmatched"
+
+
+def test_unclassified_lot_can_be_kept_for_review():
+    config_with_review = replace(config(), unmatched_decision="review")
+    decision = decide_lot(
+        classifiers=["Оборудование"], texts=["Станок токарный"], config=config_with_review
+    )
     assert decision.decision == FilterDecision.REVIEW
+
+
+def test_construction_claim_is_not_treated_as_receivable():
+    decision = decide_lot(
+        classifiers=["Земельные участки"],
+        texts=["право требования на получение результатов работ по строительству жилого дома"],
+        config=config(),
+    )
+    assert decision.decision == FilterDecision.EXCLUDE
+
+
+def test_claim_against_debtor_is_included_by_text():
+    decision = decide_lot(
+        classifiers=[],
+        texts=["Право требования к ООО «Должник» в размере 1 000 000 руб."],
+        config=config(),
+    )
+    assert decision.decision == FilterDecision.INCLUDE
+    assert decision.source == "text"
