@@ -24,6 +24,9 @@ text = "UF_CRM_138_1744310814"
 message_type = "UF_CRM_138_1744310823"
 documents = "UF_CRM_138_1758043688"
 
+status = "UF_CRM_138_STATUS"
+price_form = "UF_CRM_138_PRICE_FORM"
+
 trade_type = "UF_CRM_138_1763216600"
 trade_date = "UF_CRM_138_1763216613"
 trade_place = "UF_CRM_138_1763216655"

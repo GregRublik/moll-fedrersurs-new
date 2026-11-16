@@ -52,6 +52,7 @@ BIDDING_COLUMNS = [
     "trade_type_code",
     "trade_type_name",
     "status",
+    "price_form",
     "is_rebidding",
     "debtor_name",
     "debtor_inn",
@@ -61,6 +62,17 @@ BIDDING_COLUMNS = [
     "organizer_inn",
     "manager_name",
     "manager_inn",
+    "manager_snils",
+    "manager_address",
+    "manager_email",
+    "sro_name",
+    "sro_inn",
+    "sro_ogrn",
+    "sro_address",
+    "application_rules",
+    "additional_text",
+    "announcement_text",
+    "publisher_json",
     "case_number",
     "court",
     "platform_name",
@@ -233,10 +245,25 @@ class BiddingRepo(_BaseRepo):
             (limit,),
         )
 
-    async def list_for_sync(self, limit: int = 500) -> list[aiosqlite.Row]:
+    async def list_for_sync(
+        self,
+        limit: int = 500,
+        *,
+        guid: str | None = None,
+        include_synced: bool = False,
+    ) -> list[aiosqlite.Row]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not include_synced:
+            clauses.append("sync_status = 'pending'")
+        if guid is not None:
+            clauses.append("guid = ?")
+            params.append(guid)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
         return await self.db.fetchall(
-            "SELECT * FROM biddings WHERE sync_status = 'pending' ORDER BY last_seen_at LIMIT ?",
-            (limit,),
+            f"SELECT * FROM biddings {where} ORDER BY last_seen_at LIMIT ?",
+            params,
         )
 
     async def set_synced(self, guid: str, bitrix_id: int, synced_hash: str) -> None:
@@ -305,9 +332,25 @@ class LotRepo(_BaseRepo):
             (now_iso(), lot_key),
         )
 
-    async def list_for_sync(self, limit: int = 500) -> list[aiosqlite.Row]:
+    async def list_for_sync(
+        self,
+        limit: int = 500,
+        *,
+        trade_guid: str | None = None,
+        include_synced: bool = False,
+    ) -> list[aiosqlite.Row]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not include_synced:
+            clauses.append("sync_status = 'pending'")
+        if trade_guid is not None:
+            clauses.append("trade_guid = ?")
+            params.append(trade_guid)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
         return await self.db.fetchall(
-            "SELECT * FROM lots WHERE sync_status = 'pending' ORDER BY first_seen_at LIMIT ?", (limit,)
+            f"SELECT * FROM lots {where} ORDER BY first_seen_at LIMIT ?",
+            params,
         )
 
     async def set_synced(self, lot_key: str, bitrix_id: int, synced_hash: str) -> None:

@@ -76,6 +76,19 @@ def bidding_messages(guid: str, *, limit: int = 50, offset: int = 0) -> str:
     return api(f"/biddings/{guid}/messages", {"limit": limit, "offset": offset})
 
 
+def bankruptcy_message(guid: str) -> str:
+    return api(f"/bankruptcy-messages/{guid}")
+
+
+def bidding_message(guid: str) -> str:
+    return api(f"/bidding-messages/{guid}")
+
+
+def bankruptcy_message_doc(doc_guid: str) -> str:
+    """Path for the binary document download (fetch inside the browser page)."""
+    return api(f"/bankruptcy-message-docs/{doc_guid}")
+
+
 def account_receivables(*, limit: int = 50, offset: int = 0) -> str:
     return api("/account-receivables", {"limit": limit, "offset": offset})
 

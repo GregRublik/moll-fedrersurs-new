@@ -7,7 +7,12 @@ from fedresurs.constants import EntityType
 from fedresurs.filtering.rules import FilterConfig, decide_lot, decide_trade, lot_classifiers, lot_texts
 from fedresurs.normalization.hashing import canonical_json, content_hash
 from fedresurs.normalization.lot import normalize_lot
-from fedresurs.normalization.message import normalize_message
+from fedresurs.normalization.message import (
+    announcement_fields,
+    normalize_announcement,
+    normalize_message,
+    publisher_fields,
+)
 from fedresurs.portal import endpoints
 from fedresurs.portal.client import PortalClient
 from fedresurs.portal.parsers import extract_page
@@ -21,6 +26,14 @@ from fedresurs.storage.repositories import (
     RawRepo,
 )
 from fedresurs.timeutil import to_msk_iso
+
+PRICE_FORM_NAMES = {"OpenForm": "Открытая", "CloseForm": "Закрытая"}
+
+
+def price_form_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    return PRICE_FORM_NAMES.get(value, value)
 
 
 def merge_card(
@@ -69,6 +82,8 @@ def merge_card(
 
     if additional.get("courtName"):
         merged["court"] = additional["courtName"]
+    if additional.get("priceForm"):
+        merged["price_form"] = price_form_name(additional["priceForm"])
 
     place = card.get("tradePlace") or {}
     if place.get("name"):
@@ -163,6 +178,27 @@ class DetailsService:
             endpoints.bidding_additional(guid), entity_type=EntityType.BIDDING, entity_key=guid
         )
         merged = merge_card(base, card, main, additional)
+
+        announcement = None
+        message_guid = (card.get("message") or {}).get("guid")
+        if message_guid:
+            try:
+                announcement = await self._get_json(
+                    endpoints.bankruptcy_message(message_guid),
+                    entity_type=EntityType.BIDDING,
+                    entity_key=guid,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await self._error(guid, "announcement_failed", exc)
+            else:
+                merged.update(announcement_fields(announcement))
+                merged.update(publisher_fields(announcement))
+                message_data = normalize_announcement(announcement, guid)
+                if message_data is not None:
+                    try:
+                        await self.message_repo.upsert(message_data)
+                    except Exception as exc:  # noqa: BLE001
+                        await self._error(guid, "announcement_store_failed", exc)
 
         decision = decide_trade(merged.get("trade_type_code"), self.filter_config)
         merged["is_candidate"] = int(decision.decision == "include")

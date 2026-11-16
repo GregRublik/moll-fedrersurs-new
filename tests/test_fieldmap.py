@@ -30,7 +30,9 @@ def test_field_map_matches_discovered_type_ids():
     assert data["trade"]["entity_type_id"] == 1078
     assert data["trade"]["crm_type_id"] == 138
     assert data["trade"]["category_id"] == 179
-    assert len(data["trade"]["fields"]) == 43
+    assert len(data["trade"]["fields"]) == 45
+    assert data["trade"]["fields"]["status"] == "UF_CRM_138_STATUS"
+    assert data["trade"]["fields"]["price_form"] == "UF_CRM_138_PRICE_FORM"
 
     assert data["lot"]["entity_type_id"] == 1120
     assert data["lot"]["crm_type_id"] == 148

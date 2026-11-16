@@ -395,7 +395,11 @@ async def cmd_sync(args: argparse.Namespace) -> int:
                 dry_run=not args.write or settings.bitrix.dry_run,
                 write_enabled=settings.bitrix.write_enabled,
             )
-            stats = await service.sync_pending(args.limit)
+            stats = await service.sync_pending(
+                args.limit,
+                trade_guid=args.guid,
+                force=args.force,
+            )
             stats["requests"] = client.request_count
             stats["dry_run_mode"] = service.dry_run
             stats["write_enabled"] = settings.bitrix.write_enabled
@@ -443,6 +447,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync = sub.add_parser("sync", help="push pending items to Bitrix24 (dry-run by default)")
     sync.add_argument("--limit", type=int, default=50)
+    sync.add_argument("--guid", default=None, help="sync one trade (and its lots) only")
+    sync.add_argument(
+        "--force",
+        action="store_true",
+        help="include already synced rows (for an explicit re-sync)",
+    )
     sync.add_argument(
         "--write",
         action="store_true",

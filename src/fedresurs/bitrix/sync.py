@@ -85,6 +85,7 @@ def build_trade_fields(row: Any, field_map: FieldMap) -> dict[str, Any]:
         "trade_type": row["trade_type_name"],
         "trade_type_alt": row["trade_type_name"],
         "status": row["status"],
+        "price_form": row["price_form"],
         "date": row["published_at"],
         "trade_date": row["trade_start_at"],
         "trade_start": row["trade_start_at"],
@@ -107,6 +108,16 @@ def build_trade_fields(row: Any, field_map: FieldMap) -> dict[str, Any]:
         "manager": row["manager_name"],
         "manager_name": row["manager_name"],
         "manager_inn": row["manager_inn"],
+        "manager_snils": row["manager_snils"],
+        "manager_address": row["manager_address"],
+        "manager_email": row["manager_email"],
+        "sro_name": row["sro_name"],
+        "sro_inn": row["sro_inn"],
+        "sro_ogrn": row["sro_ogrn"],
+        "sro_address": row["sro_address"],
+        "rules": row["application_rules"],
+        "additional_info": row["additional_text"],
+        "text": row["announcement_text"],
         "platform_raw": row["platform_name"],
         "etp_name": row["platform_name"],
         "etp_url": row["platform_url"],
@@ -181,7 +192,13 @@ class BitrixSyncService:
         self.error_repo = error_repo
         self.dry_run = dry_run or not write_enabled
 
-    async def sync_pending(self, limit: int = 50) -> dict[str, int]:
+    async def sync_pending(
+        self,
+        limit: int = 50,
+        *,
+        trade_guid: str | None = None,
+        force: bool = False,
+    ) -> dict[str, int]:
         stats = {
             "trades_scanned": 0,
             "trades_synced": 0,
@@ -192,11 +209,15 @@ class BitrixSyncService:
             "errors": 0,
         }
 
-        for row in await self.bidding_repo.list_for_sync(limit):
+        for row in await self.bidding_repo.list_for_sync(
+            limit, guid=trade_guid, include_synced=force
+        ):
             stats["trades_scanned"] += 1
             await self._sync_bidding(row, stats)
 
-        for row in await self.lot_repo.list_for_sync(limit):
+        for row in await self.lot_repo.list_for_sync(
+            limit, trade_guid=trade_guid, include_synced=force
+        ):
             stats["lots_scanned"] += 1
             await self._sync_lot(row, stats)
 

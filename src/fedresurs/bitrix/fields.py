@@ -8,10 +8,23 @@ from typing import Any
 
 
 def to_api_name(original: str) -> str:
-    """UF_CRM_138_123 -> ufCrm138_123 (what crm.item.* expects by default)."""
-    if original.upper().startswith("UF_CRM_"):
-        return "ufCrm" + original[len("UF_CRM_"):]
-    return original
+    """Convert an original UF name to Bitrix camelCase.
+
+    UF_CRM_138_1744310779 -> ufCrm138_1744310779
+    UF_CRM_138_STATUS     -> ufCrm138Status
+    UF_CRM_138_PRICE_FORM -> ufCrm138PriceForm
+    """
+    if not original.upper().startswith("UF_CRM_"):
+        return original
+    parts = original[len("UF_CRM_"):].split("_")
+    if not parts or not parts[0]:
+        return original
+    result = "ufCrm" + parts[0]
+    for part in parts[1:]:
+        if not part:
+            continue
+        result += ("_" + part) if part.isdigit() else part.capitalize()
+    return result
 
 
 @dataclass(slots=True)

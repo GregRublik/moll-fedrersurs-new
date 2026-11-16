@@ -1,0 +1,11 @@
+ALTER TABLE biddings ADD COLUMN application_rules TEXT;
+ALTER TABLE biddings ADD COLUMN additional_text TEXT;
+ALTER TABLE biddings ADD COLUMN announcement_text TEXT;
+ALTER TABLE biddings ADD COLUMN publisher_json TEXT;
+ALTER TABLE biddings ADD COLUMN manager_snils TEXT;
+ALTER TABLE biddings ADD COLUMN manager_address TEXT;
+ALTER TABLE biddings ADD COLUMN manager_email TEXT;
+ALTER TABLE biddings ADD COLUMN sro_name TEXT;
+ALTER TABLE biddings ADD COLUMN sro_inn TEXT;
+ALTER TABLE biddings ADD COLUMN sro_ogrn TEXT;
+ALTER TABLE biddings ADD COLUMN sro_address TEXT;

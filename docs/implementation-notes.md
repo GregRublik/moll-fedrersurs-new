@@ -18,9 +18,47 @@ Internal JSON API used by the collector (unofficial, may change):
 | `GET /backend/biddings/{guid}/main` | number, status, type, `isRebidding` |
 | `GET /backend/biddings/{guid}/additional` | court, application rules |
 | `GET /backend/biddings/{guid}/lots?offset&limit` | lots |
-| `GET /backend/biddings/{guid}/messages?offset&limit` | trade events |
+| `GET /backend/biddings/{guid}/messages?offset&limit` | trade event list (metadata) |
+| `GET /backend/bankruptcy-messages/{guid}` | full sale announcement: text, publisher/SRO, docs, lot table |
+| `GET /backend/bidding-messages/{guid}` | event message: rules, application period, `lotList` with price schedule |
+| `GET /backend/bankruptcy-message-docs/{doc_guid}` | binary document download |
 | `GET /backend/account-receivables` | "права требований" showcase (no trade guid) |
 | `GET /backend/reference-book/bidding-types`, `/regions` | reference books |
+
+### Materials (message text and documents)
+
+Verified on the live portal:
+
+- The trade card (`/backend/biddings/{guid}`) contains `message.guid` — the
+  **bankruptcy message** (sale announcement), not the event message.
+- `/backend/bankruptcy-messages/{guid}` returns `content.messageInfo.messageContent.text`
+  and `additionalText` (full announcement text), `content.publisher` (FIO, INN,
+  SNILS, OGRNIP, address, SRO name/INN/OGRN/address), `docs[]` (guid, name,
+  size) and `lotTable`.
+- `/backend/bidding-messages/{guid}` returns the event content:
+  `content.tradeInfo.application.rules`, `lotList[]` with `priceReduction`
+  (HTML table), `classification`, `paymentInfo`, `saleAgreement`.
+- Documents are not links in the page; the SPA calls
+  `GET /backend/bankruptcy-message-docs/{doc_guid}` and receives the binary
+  file with the correct content type. Verified download of a 32 KB .docx.
+
+Implementation (2026-11-15):
+
+- `DetailsService` reads `card.message.guid` and fetches
+  `/backend/bankruptcy-messages/{guid}`; the announcement is stored in
+  `messages` with full `text_html`/`text_plain` and `files_json` (document
+  guid/name/size/download URL).
+- Publisher/SRO fields, `application.rules`, `additionalText` and the
+  announcement text are merged into `biddings` (`manager_snils`,
+  `manager_address`, `sro_*`, `application_rules`, `additional_text`,
+  `announcement_text`, `publisher_json`).
+- Bitrix mapping verified on the test trade 5100: rules, text, manager SNILS/
+  address and SRO fields are populated. Note: the mapped Bitrix fields are
+  `string`, so `_truncate` caps them at 500 characters; the full text stays in
+  SQLite.
+- Event message bodies (`/backend/bidding-messages/{guid}`) are not fetched
+  yet; the announcement already contains the main text, rules and documents.
+  Documents are stored as metadata + download URLs, not uploaded into Bitrix.
 
 ### Qrator findings
 
@@ -91,3 +129,47 @@ Write mode requires **both** `BITRIX_WRITE_ENABLED=true` and `sync --write`.
 - `raw_payloads` — last raw responses for audit and re-parsing.
 - `collection_windows` + `window_sightings` — completeness per window.
 - `errors` — separate from `outcome=no_data`; empty source is never an error.
+
+## Live verification on the test portal (2026-11-15)
+
+Performed against `b24test.lot4rent.ru` with `BITRIX_WRITE_ENABLED=true`
+passed only as a one-off environment override; `.env` remains write-disabled.
+
+- Trade `090f8a46-b780-40ce-911f-c5a4b74a760a` -> Bitrix item **5100**:
+  `categoryId=179`, `stageId=DT1078_179:NEW`, `xmlId` set, fields populated.
+- Lot `090f8a46...:1` -> Bitrix item **5181**: `categoryId=180`,
+  `parentId1078=5100`, `xmlId` set, prices and classification populated.
+- Repeated `sync --force` updated the same two items: `crm.item.list` by
+  `xmlId` still returns exactly one item each (no duplicates).
+- Update path verified: a changed `debtor_name` was written to Bitrix and then
+  restored.
+
+Open gap found by the live test: **there was no status field in smart process
+1078**. It was resolved by creating two string fields on `CRM_138`:
+
+- `UF_CRM_138_STATUS` ("Статус торгов") -> API name `ufCrm138Status`;
+- `UF_CRM_138_PRICE_FORM` ("Форма подачи предложения о цене") ->
+  API name `ufCrm138PriceForm`.
+
+Both are populated on the test trade (5100): status `Объявлены торги`,
+price form `Закрытая`. The fields are not mapped to funnel stages: stages are
+the user's workflow (`Начало`/`Подготовка`/...), not source statuses.
+
+`tools/create_missing_fields.py` checks and creates them idempotently; run it
+with `--apply` on the production portal before enabling writes.
+
+Production portal (`b24.lot4rent.ru`, 2026-11-15): `crm.type.id` values are the
+same (138/148), categories 179/180 exist, and both fields were created
+(`UF_CRM_138_STATUS` id 9439, `UF_CRM_138_PRICE_FORM` id 9440). The lot process
+on production has 26 fields instead of 21: five extra fields (manager name and
+email, debtor INN, debtor type as enumeration, bankruptcy case number) are not
+mapped yet.
+
+### UF naming notes
+
+- For `userfieldconfig.*`, the entity id is **`CRM_138` / `CRM_148`**
+  (`crm.type.id`), not `CRM_1078` / `CRM_1120`.
+- `crm.item.*` camelCase conversion is not a simple prefix replacement:
+  `UF_CRM_138_1744310779` -> `ufCrm138_1744310779`, but
+  `UF_CRM_138_STATUS` -> `ufCrm138Status` and
+  `UF_CRM_138_PRICE_FORM` -> `ufCrm138PriceForm`.

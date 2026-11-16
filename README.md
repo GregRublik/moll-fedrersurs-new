@@ -94,15 +94,74 @@ BITRIX_DRY_RUN=false
 uv run python src/main.py sync --limit 20 --write
 ```
 
-Перед этим обязательно снять фактические поля с целевого портала — они могут
-отличаться от тестовых:
+### Переход на прод-портал
 
-```bash
-uv run python tools/dump_bitrix_fields.py
-```
+**Поля, созданные в одном портале, не переносятся в другой.** В текущем
+тестовом и продовом порталах `UF_CRM_138_STATUS` и `UF_CRM_138_PRICE_FORM`
+уже созданы (2026-11-15); для нового портала их нужно создать заново и сверить
+всю схему.
 
-Результат — `var/discovery/*.json`; при расхождениях обновить
-`config/bitrix_fieldmap.toml`.
+Порядок:
+
+1. Переключить `.env` на прод (`BITRIX_BASE_URL`, `BITRIX_KEY_202`,
+   `BITRIX_USER_ID`). Запись пока оставить выключенной:
+   `BITRIX_WRITE_ENABLED=false`, `BITRIX_DRY_RUN=true`.
+2. Проверить прод read-only:
+   ```bash
+   uv run python src/main.py doctor --network
+   ```
+   В выводе смотреть `type.id` для 1078/1120 и наличие воронок 179/180.
+3. Проверить и создать недостающие поля:
+   ```bash
+   # dry-run: показывает, что будет создано
+   uv run python tools/create_missing_fields.py
+
+   # создать (идемпотентно)
+   uv run python tools/create_missing_fields.py --apply
+   ```
+   Скрипт сам определяет `crm.type.id` через `crm.type.getByEntityTypeId` и
+   создаёт поля с правильным префиксом `UF_CRM_<type.id>_*`.
+4. Снять фактическую схему полей:
+   ```bash
+   uv run python tools/dump_bitrix_fields.py
+   ```
+   Результат — `var/discovery/*.json`.
+5. Сверить дамп с `config/bitrix_fieldmap.toml` по `title`/`fieldName`/`type`.
+
+### Если на проде схема отличается
+
+**Другой `crm.type.id` (не 138/148).** `create_missing_fields.py` создаст поля
+с правильным префиксом, но `config/bitrix_fieldmap.toml` и тесты всё ещё
+ссылаются на `UF_CRM_138_*` / `UF_CRM_148_*`. Нужно:
+
+- заменить префиксы в `config/bitrix_fieldmap.toml` на фактические;
+- обновить `tests/test_fieldmap.py` (там зафиксированы `crm_type_id`,
+  количество полей и префиксы);
+- перезапустить `uv run pytest` и `doctor`.
+
+**Поля называются иначе.** Сопоставить логические имена с фактическими по
+`title` в дампе и обновить `config/bitrix_fieldmap.toml` (слева — логическое
+имя, справа — оригинальное `UF_CRM_*`). Если нужного поля нет вообще —
+добавить его в `REQUIRED_FIELDS` в `tools/create_missing_fields.py` (или
+создать вручную через `userfieldconfig.add`) и повторить шаг 3.
+
+**Другой тип поля.** Если сопоставленное поле — `enumeration`, `crm_entity`
+или `file`, а код передаёт строку, Bitrix вернёт ошибку валидации. Варианты:
+привести значение к формату поля (id варианта списка, `T1078_<id>`) или
+попросить администратора изменить тип поля на строковый.
+
+**Нет `xmlId` или он не фильтруется.** Дедупликация в `bitrix/sync.py`
+опирается на `xmlId`. Fallback: создать UF-поле «GUID источника» (string),
+переключить `entity_map`/`sync` на него и обновить fieldmap.
+
+**Нет `parentId1078`.** Связь «лот → торги» не настроена. Включить relation
+parent↔child в настройках смарт-процесса или использовать UF-привязку
+`T1078_<id>` / UF-строку с GUID торгов.
+
+**После любых правок схемы:** `doctor --network` → `pytest` → `sync` без
+`--write` (dry-run) → точечная запись одного торга и его лота
+(`sync --guid <guid> --write`) → проверка карточки в Bitrix → только потом
+массовая запись. Имена полей с тестового портала не копировать вслепую.
 
 ## 5. Команды
 
